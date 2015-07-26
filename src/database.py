@@ -38,6 +38,7 @@ class MySQLConnector(object):
     def insert_data(self, insert_stmt, values):
         cursor = self.cnx.cursor()
         try:
+            print insert_stmt, values
             cursor.execute(insert_stmt, values);
             self.cnx.commit()
         except Exception as e:
@@ -57,3 +58,16 @@ def insertAlert(datatime, node, status):
     values = (datatime, node, status)
     conn.insert_data(conn.alerts_insert,values)	
     conn.disconnect()
+
+def insertMeas(values):
+    conn = MySQLConnector()
+    try: 
+        conn.connect()
+    except Exception as e:
+        print "Unable to connect to server"
+        print e
+
+    conn.insert_data(conn.meas_insert,values)
+    conn.disconnect()
+
+

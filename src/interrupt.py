@@ -4,6 +4,7 @@ import mraa
 import time
 import pulsein
 import database
+import os
 from  multiprocessing import Value, Process, Lock
 from datetime import datetime
 
@@ -134,26 +135,43 @@ class Ultrasonic(Sensor) :
         while True:
             print "write:"
             if self.file <> '' :
-                with open(self.file, 'a') as file :
-                    with measurement_lock:
+                with measurement_lock:
+                    with open(self.file, 'a') as file :
                         file.write('{0},{1},{2},{3}\n'.format(NODE, datetime.now(), ultrasonic_value.value, self.type))
             time.sleep(self.timeint)
                
 ultrasonic_value = Value('d',0.0)
 
-def write_to_db(args):
-    print args
-    database.insetAlert
+def write_to_db(file,timeint):
+    while True :
+        # Read input file
+        with measurement_lock:
+            with open(file, 'r') as f :
+                registers = f.readlines()
+            if os.path.isfile(file):
+                try: 
+                    os.remove(file) 
+                except OSError as e: 
+                    print '================== Cannot remove {0} file, err {1}'.format(file,e)
+                    continue
+        print '================= Sending to DB'
+        for reg in registers:
+            fields = reg.split(',')
+            database.insertMeas(fields)
+        time.sleep(timeint)
  
         
 if __name__ == '__main__':
-    pluviometer = Pluviometer(PLUVIOMETER,'mm',1,'measurement', 2.0) 
+    meas_file = 'measurement'
+    pluviometer = Pluviometer(PLUVIOMETER,'mm',1,meas_file, 2.0) 
     pluviometer_thread = Process(target=pluviometer.thread, args=(None,))
     pluviometer_write = Process (target=pluviometer.thread_write, 
                                  args=(None,))
-    ultrasonic = Ultrasonic(ULTRASONIC,'cm', 58.2, 'measurement', 1.0)
+    ultrasonic = Ultrasonic(ULTRASONIC,'cm', 58.2, meas_file, 1.0)
     ultrasonic_thread = Process(target = ultrasonic.thread, args=(None,))
     ultrasonic_write = Process(target = ultrasonic.thread_write, args=(None,))
+    measurement_db = Process(target = write_to_db, args=(meas_file,20))
+    measurement_db.start()
     ultrasonic_thread.start()
     ultrasonic_write.start()
     pluviometer_thread.start()
@@ -168,3 +186,4 @@ if __name__ == '__main__':
         pluviometer_write.terminate()
         ultrasonic_thread.terminate()
         ultrasonic_write.terminate()
+        measurement_db.terminate()
