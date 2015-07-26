@@ -61,11 +61,10 @@ class Pluviometer(Sensor):
         while True:
             lcounter = pluviometer_value.value
             with pluviometer_lock:
-                print "write: unlocked"
-                #pluviometer_value.value = 0
+                pluviometer_value.value = 0
             measure = lcounter * self.conv_ratio
             print "write: {0}, {1} mm".format(lcounter, measure)
-            if self.file <> '' : 
+            if self.file <> '' and measure <> 0: 
                 with open(self.file, 'a') as file :
                     with measurement_lock:
                         file.write('{0},{1},{2},{3}\n'.format(NODE, datetime.now(), measure, self.type))
@@ -164,7 +163,7 @@ def write_to_db(file,timeint):
         
 if __name__ == '__main__':
     meas_file = 'measurement'
-    pluviometer = Pluviometer(PLUVIOMETER,'mm',1,meas_file, 2.0) 
+    pluviometer = Pluviometer(PLUVIOMETER,'mm',RAIN_BUCKET,meas_file, 10) 
     pluviometer_thread = Process(target=pluviometer.thread, args=(None,))
     pluviometer_write = Process (target=pluviometer.thread_write, 
                                  args=(None,))
