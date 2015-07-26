@@ -14,6 +14,7 @@ DELTAT_ULTRA = 0.2
 MAX_WATER = 20 # in centimeters
 PLUVIOMETER = 1
 ULTRASONIC = 2 
+RAIN_BUCKET = 5
 
 class Sensor:
     "Defines Sensor attributes and methods"
@@ -42,7 +43,7 @@ class Pluviometer(Sensor):
         self.gpio.dir(gpio_dir)
         self.gpio.mode(mraa.MODE_PULLUP)
 
-    def __init__(self, type = 'pluviometer' , unit = 'mm' , conv_ratio = 1 ,
+    def __init__(self, type = 'pluviometer' , unit = 'mm' , conv_ratio = RAIN_BUCKET ,
                  file = 'measurement', timeint = 2, status = 1, gpio_pin = 4,
                  gpio_dir = mraa.DIR_IN) : 
         Sensor.__init__(self, type, unit, conv_ratio, file,timeint, status) 
