@@ -3,7 +3,16 @@
 import mraa
 import time
 import pulsein
+import database
 from  multiprocessing import Value, Process, Lock
+from datetime import datetime
+
+NODE=1
+DELTAT_ULTRA = 0.2
+#ALERT_FLAG = 0
+MAX_WATER = 20 # in centimeters
+PLUVIOMETER = 1
+ULTRASONIC = 2 
 
 class Sensor:
     "Defines Sensor attributes and methods"
@@ -30,17 +39,21 @@ class Pluviometer(Sensor):
     def __init__gpio(self, gpio_pin, gpio_dir):
         self.gpio = mraa.Gpio(gpio_pin)
         self.gpio.dir(gpio_dir)
+        self.gpio.mode(mraa.MODE_PULLUP)
+
     def __init__(self, type = 'pluviometer' , unit = 'mm' , conv_ratio = 1 ,
-                 file = 'pluviometer', timeint = 60, status = 1, gpio_pin = 4,
+                 file = 'measurement', timeint = 2, status = 1, gpio_pin = 4,
                  gpio_dir = mraa.DIR_IN) : 
         Sensor.__init__(self, type, unit, conv_ratio, file,timeint, status) 
         self.__init__gpio(gpio_pin, gpio_dir)
+
     def thread(self, args):
         print 'Hello from thread_pluv'
-        self.gpio.isr(mraa.EDGE_RISING, pluviometer_interrupt,
+        self.gpio.isr(mraa.EDGE_BOTH, pluviometer_interrupt,
                       pluviometer_interrupt)
         while True:
             time.sleep(1)
+
     def thread_write(self, args):
         print 'time: {}'.format( self.timeint)
         while True:
@@ -51,14 +64,16 @@ class Pluviometer(Sensor):
             measure = lcounter * self.conv_ratio
             print "write: {0}, {1} mm".format(lcounter, measure)
             if self.file <> '' : 
-                with open(self.file, 'w') as file :
-                    file.write('{0}\n'.format(measure))
+                with open(self.file, 'a') as file :
+                    with measurement_lock:
+                        file.write('{0},{1},{2},{3}\n'.format(NODE, datetime.now(), measure, self.type))
             time.sleep(self.timeint)
 
 # Pluviometer Global definitions
 
 pluviometer_value= Value('i',0)
 pluviometer_lock = Lock()
+measurement_lock = Lock()
 
 def pluviometer_interrupt(args):
     print 'Touched!!!'
@@ -68,20 +83,24 @@ def pluviometer_interrupt(args):
 
 class Ultrasonic(Sensor) :
     "Defines methods to read from ultrasonic sensor"
+
     def __init__gpio(self, echo_pin, trigger_pin):
         self.echo_pin=mraa.Gpio(echo_pin)
         self.trigger_pin = mraa.Gpio(trigger_pin)
         self.echo_pin.dir(mraa.DIR_IN)
         self.trigger_pin.dir(mraa.DIR_OUT)
+
     def __init__(self, type = 'ultrasonic' , unit = 'cm' , conv_ratio = 58.2 ,
-                 file = 'ultrasonic', timeint = 0.5, status = 1, echo_pin = 6,
+                 file = 'measurement', timeint = 1, status = 1, echo_pin = 6,
                  trigger_pin = 5, max_range = 400, min_range = 0, initial_value=46.5):
         Sensor.__init__(self, type,unit,conv_ratio,file,timeint, status)
         self.__init__gpio(echo_pin, trigger_pin)
         self.max_range = max_range
         self.min_range = min_range
         self.initial_value = initial_value
+
     def thread(self, args):
+        ALERT_FLAG = 0
         while True: 
             self.trigger_pin.write(0)
             time.sleep(0.000002) #2 microseconds
@@ -90,30 +109,49 @@ class Ultrasonic(Sensor) :
             self.trigger_pin.write(0)
             duration  = pulsein.pulseIn(self.echo_pin) # microseconds 
             ultrasonic_value.value = self.initial_value - (duration / self.conv_ratio) # distance
+            
+            if ultrasonic_value.value >= MAX_WATER :
+                if ALERT_FLAG == 0:
+                    ALERT_FLAG = 1
+                    print 'ALERT UP!!!!!!!!!'
+                    database.insertAlert(datetime.now(), NODE, ALERT_FLAG)
+            else :
+                if ALERT_FLAG == 1:
+                    ALERT_FLAG = 0
+                    print 'ALERT DOWM!!!!!!!'
+                    database.insertAlert(datetime.now(), NODE ,ALERT_FLAG)
+
             if ultrasonic_value.value >= self.max_range or \
                 ultrasonic_value.value <= self.min_range :
                 print "Out of range {0}".format(ultrasonic_value.value)
                 ultrasonic_value.value = -1
             else :
                 print "Distance: {0} cm".format(ultrasonic_value.value)
-            time.sleep(0.2)
+            time.sleep(DELTAT_ULTRA)
+
     def thread_write(self, args):
         print 'time: {}'.format( self.timeint)
         while True:
             print "write:"
             if self.file <> '' :
-                with open(self.file, 'w') as file :
-                    file.write('{0}\n'.format(ultrasonic_value.value))
+                with open(self.file, 'a') as file :
+                    with measurement_lock:
+                        file.write('{0},{1},{2},{3}\n'.format(NODE, datetime.now(), ultrasonic_value.value, self.type))
             time.sleep(self.timeint)
                
-ultrasonic_value = Value('d',0.0) 
+ultrasonic_value = Value('d',0.0)
+
+def write_to_db(args):
+    print args
+    database.insetAlert
+ 
         
 if __name__ == '__main__':
-    pluviometer = Pluviometer('pluviometer','mm',1,'pluviometer', 10) 
+    pluviometer = Pluviometer(PLUVIOMETER,'mm',1,'measurement', 2.0) 
     pluviometer_thread = Process(target=pluviometer.thread, args=(None,))
     pluviometer_write = Process (target=pluviometer.thread_write, 
                                  args=(None,))
-    ultrasonic = Ultrasonic('ultrasonic','cm', 58.2, 'ultrasonic', 0.5)
+    ultrasonic = Ultrasonic(ULTRASONIC,'cm', 58.2, 'measurement', 1.0)
     ultrasonic_thread = Process(target = ultrasonic.thread, args=(None,))
     ultrasonic_write = Process(target = ultrasonic.thread_write, args=(None,))
     ultrasonic_thread.start()
@@ -130,4 +168,3 @@ if __name__ == '__main__':
         pluviometer_write.terminate()
         ultrasonic_thread.terminate()
         ultrasonic_write.terminate()
-
